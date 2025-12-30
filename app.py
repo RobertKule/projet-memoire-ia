@@ -228,7 +228,7 @@ if 'selected_departments' not in st.session_state:
 if 'api_initialized' not in st.session_state:
     st.session_state.api_initialized = False
 
-# ============================================================================
+## ============================================================================
 # FONCTIONS UTILITAIRES
 # ============================================================================
 @st.cache_resource
@@ -236,32 +236,34 @@ def initialize_system():
     """Initialise le système de recommandation avec Google Gemma 3"""
     with st.spinner("🔄 Initialisation du système intelligent..."):
         try:
-            # Charger les variables d'environnement
-            load_dotenv()
+            # 1. Gestion hybride de la clé API (Local .env vs Streamlit Cloud Secrets)
+            load_dotenv() # Tente de charger le .env local
             
-            # Vérifier la clé API Google
-            api_key = os.getenv("GOOGLE_API_KEY")
+            # On cherche dans st.secrets (Cloud) puis dans os.getenv (.env local)
+            api_key = st.secrets.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            
             if not api_key:
                 st.error("""
                 ❌ Clé API Google non trouvée !
                 
-                Ajoutez dans votre fichier `.env` :
-                ```
-                GOOGLE_API_KEY=AIzaSyCATUzWAdFJysadR7ZMU1E09zsAnSFu7Zo
-                ```
+                **En local :** Vérifiez votre fichier `.env`.
+                **Sur le Cloud :** Ajoutez `GOOGLE_API_KEY` dans les Secrets de votre application.
                 """)
                 return None, None, None, None
             
-            # Charger les sujets
-            df = load_subjects("data/sujets_memoires.csv")
+            # 2. Chargement des données (CSV)
+            # Utilise un chemin relatif robuste
+            csv_path = os.path.join(os.path.dirname(__file__), "data/sujets_memoires.csv")
+            df = load_subjects(csv_path)
+            
             if df.empty:
-                st.error("❌ Impossible de charger les données des sujets.")
+                st.error("❌ Base de données des sujets vide ou introuvable.")
                 return None, None, None, None
             
-            # Initialiser les embeddings
+            # 3. Initialisation des composants NLP
             embedding_manager = EmbeddingManager()
             
-            # Préparer les embeddings
+            # Préparation des données pour ChromaDB
             texts = df['texte_complet'].tolist()
             metadatas = df[['departement', 'niveau']].to_dict('records')
             
@@ -270,14 +272,14 @@ def initialize_system():
                 metadatas=metadatas
             )
             
-            # Initialiser le recommandateur avec Gemma 3
+            # 4. Initialisation du Recommender avec la clé récupérée
             recommender = RecommenderSystem(api_key=api_key)
             
             st.session_state.api_initialized = True
             return df, embedding_manager, collection, recommender
             
         except Exception as e:
-            st.error(f"❌ Erreur d'initialisation: {str(e)}")
+            st.error(f"❌ Erreur critique lors de l'initialisation : {str(e)}")
             return None, None, None, None
 
 # Classe de démo fallback
