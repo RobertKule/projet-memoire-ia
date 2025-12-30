@@ -12,6 +12,41 @@ from utils.data_loader import load_subjects
 from utils.embeddings import EmbeddingManager
 from utils.recommender import RecommenderSystem  # Version Gemma 3
 
+from fpdf import FPDF
+from fpdf.enums import XPos, YPos
+
+def create_pdf(recommendation_text, student_name="Étudiant"):
+    # Initialisation (Helvetica remplace Arial par défaut pour éviter les warnings)
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # Titre du rapport
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(190, 10, "Rapport d'Orientation Académique - FST", 
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+    pdf.ln(10)
+    
+    # Infos étudiant
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(190, 10, f"Destinataire : {student_name}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(190, 10, f"Date : {time.strftime('%d/%m/%Y')}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(5)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(10)
+    
+    # Contenu de la recommandation
+    pdf.set_font("Helvetica", "", 11)
+    
+    # Nettoyage des caractères spéciaux (latin-1)
+    # Important : latin-1 ne supporte pas tous les emojis, on les remplace par du texte ou on les ignore
+    clean_text = recommendation_text.replace('📘', '').replace('🎯', '-').replace('✅', 'OK').replace('⚙️', '*')
+    clean_text = clean_text.encode('latin-1', 'ignore').decode('latin-1')
+    
+    pdf.multi_cell(0, 8, clean_text)
+    
+    # Sortie en bytes (La nouvelle syntaxe retire le paramètre 'dest')
+    return pdf.output()
+
 # Configuration de la page
 st.set_page_config(
     page_title="Recommandation de Sujets de Mémoire",
@@ -590,7 +625,7 @@ if generate_btn and user_query.strip():
             )
             st.session_state.user_query = user_query
 
-# Afficher les recommandations si disponibles
+# --- BLOC D'AFFICHAGE DES RÉSULTATS ---
 if st.session_state.get('recommendations'):
     st.markdown("---")
     
@@ -599,70 +634,92 @@ if st.session_state.get('recommendations'):
     with col_header1:
         st.markdown(f"### 📋 Vos recommandations personnalisées")
         
-        # Afficher le contexte
+        # Afficher le contexte (Expander pour ne pas encombrer l'écran)
         with st.expander("🔍 Voir les critères de recherche", expanded=False):
             st.markdown(f"""
-            **Niveau :** {st.session_state.student_level}
-            **Départements :** {', '.join(st.session_state.selected_departments)}
-            **Requête :** "{st.session_state.user_query}"
+            **Niveau cible :** {st.session_state.student_level}  
+            **Départements sélectionnés :** {', '.join(st.session_state.selected_departments)}  
+            **Votre requête :** "{st.session_state.user_query}"
             """)
             
             if st.session_state.get('context_used'):
-                st.markdown("**Sujets de référence analysés :**")
+                st.markdown("**Sujets de référence analysés dans la base :**")
                 for doc in st.session_state.context_used[:3]:
-                    st.markdown(f"- {doc.get('titre', 'Sujet')} ({doc.get('departement', 'Génie Informatique')})")
+                    st.markdown(f"- {doc.get('titre', 'Sujet')} *({doc.get('departement', 'Génie')})*")
     
     with col_header2:
         if st.button("🔄 Nouvelle recherche", use_container_width=True, type="secondary"):
             st.session_state.recommendations = None
-            st.session_state.preset_query = ""
+            # On garde l'historique mais on réinitialise la recherche actuelle
             st.rerun()
     
-    # Affichage des recommandations
-    st.markdown(st.session_state.recommendations, unsafe_allow_html=True)
+    # Zone d'affichage de la recommandation (Style "Card")
+    st.info("💡 Analyse de l'IA Gemma 3 terminée avec succès.")
+    st.markdown(st.session_state.recommendations)
     
-    # Actions supplémentaires
+    # --- SECTION EXPORT ---
     st.markdown("---")
-    st.markdown("### 📤 Exporter vos recommandations")
+    st.markdown("### 📤 Exporter vos résultats")
     
     col_export1, col_export2, col_export3 = st.columns(3)
     
+    # 1. BOUTON PDF (Logique Réelle)
     with col_export1:
-        if st.button("📄 Télécharger en PDF", use_container_width=True):
-            st.info("Fonctionnalité PDF en cours de développement...")
-    
+        try:
+            # On utilise la fonction create_pdf définie plus tôt
+            # Note : Assure-toi que la fonction create_pdf est bien dans ton code
+            pdf_bytes = create_pdf(st.session_state.recommendations, st.session_state.get('user_name', 'Étudiant FST'))
+            
+            st.download_button(
+                label="📄 Télécharger en PDF",
+                data=pdf_bytes,
+                file_name=f"Rapport_Orientation_{pd.Timestamp.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error("Erreur génération PDF")
+
+    # 2. BOUTON TEXTE (.txt)
     with col_export2:
         export_text = f"""
-        RECOMMANDATIONS DE SUJETS DE MÉMOIRE - ASSISTANT IA
+        RECOMMANDATIONS DE SUJETS DE MÉMOIRE - FST
         {'=' * 60}
         Date : {pd.Timestamp.now().strftime('%d/%m/%Y %H:%M')}
         Niveau : {st.session_state.student_level}
         Départements : {', '.join(st.session_state.selected_departments)}
         
-        REQUÊTE DE L'ÉTUDIANT :
-        {st.session_state.user_query}
+        REQUÊTE : {st.session_state.user_query}
         
-        RECOMMANDATIONS :
+        {'-' * 60}
         {st.session_state.recommendations}
+        {'-' * 60}
         
-        {'=' * 60}
-        Généré par l'Assistant IA - Faculté des Sciences et Technologies
+        Généré par l'Assistant IA (Gemma 3) - Faculté des Sciences et Technologies
         """
         
         st.download_button(
             label="📝 Télécharger (.txt)",
             data=export_text,
-            file_name=f"recommandations_{pd.Timestamp.now().strftime('%Y%m%d_%H%M')}.txt",
+            file_name=f"sujets_memoire_{pd.Timestamp.now().strftime('%H%M')}.txt",
             mime="text/plain",
             use_container_width=True
         )
     
+    # 3. BOUTON FAVORIS (Logique Session)
     with col_export3:
         if st.button("⭐ Ajouter aux favoris", use_container_width=True):
-            st.success("✅ Recommandations sauvegardées dans vos favoris")
-            time.sleep(1)
-            st.rerun()
-
+            if 'favorites' not in st.session_state:
+                st.session_state.favorites = []
+            
+            # On sauvegarde un petit dictionnaire
+            fav = {
+                "date": pd.Timestamp.now().strftime('%d/%m/%Y'),
+                "query": st.session_state.user_query,
+                "content": st.session_state.recommendations
+            }
+            st.session_state.favorites.append(fav)
+            st.success("✅ Ajouté à votre profil !")
 # ============================================================================
 # SECTION D'INFORMATION
 # ============================================================================
