@@ -1,3 +1,4 @@
+# utils/embeddings.py
 """
 Module de gestion des embeddings et base vectorielle
 """
